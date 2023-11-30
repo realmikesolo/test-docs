@@ -1,0 +1,277 @@
+## Overview
+
+The management of schema changes in Drizzle relies on two key components: **Drizzle Kit** (A CLI companion for automatic SQL migrations generation and rapid prototyping) 
+and **Drizzle config** (A configuration file that is used by **Drizzle Kit** and contains all the information about your database connection, migration folder and schema files)
+
+Drizzle supports two approaches to manage schema changes in your project:
+
+1. Using `drizzle-kit generate` for generating SQL migration files based on your schema changes.
+2. Using `drizzle-kit push` command for applying schema changes directly to the database.
+
+So, `drizzle-kit generate` and `drizzle-kit push` both synchronize your Drizzle schema and database schema, but they play different roles in the development workflow and should not be used interchangeably.
+
+### Differences
+
+| | `drizzle-kit generate` | `drizzle-kit push` |
+| :-----: | :--------------------: | :----------------: |
+| **Purpose** | **Ideal for production**. Designed for managing schema changes in your project. It is good for situations where you need to manage schema changes in your project and apply them to other environments like development or production | **Ideal for local**. Designed for rapid prototyping and experimentation. It is good for situations where you need to quickly test new schema designs or changes in a local development environment, allowing for fast iterations without the overhead of managing migration files |
+| **Operation Overview** | Reads the last snapshot (JSON file) from the migration folder and compares it with the current drizzle schema defined in TypeScript | First retrieves the schema details from the database, converting it to a format that Drizzle understands. Then it reads your TypeScript schema files, converting them into the same format |
+| **Schema Comparison and Synchronization** | Generates SQL migration files representing changes needed to transition from the last known schema state (from the snapshot) to the current state (as defined in your schema files) | Compares two schema representations (from the database and schema files), executes SQL statements to align the database schema with your TypeScript schema |
+| **Database Interaction** | Does not interact with your database during the migration file creation process. It solely relies on the schema files and migration history to generate the next migration file | Directly interacts with the database to apply changes. It operates independently of migration files and does not require their use |
+
+## `drizzle-kit generate` command
+
+## `drizzle-kit push` command
+
+### Overview
+
+When it comes to local prototyping and rapid schema changes, approach with a set of migration files can quickly become a real mess. So to boost productivity Drizzle offers a useful command called `drizzle-kit push`.
+
+`drizzle-kit push:{dialect}` lets you push your schema changes directly to the database without generating any migrations files and does not require their use. If changes will cause data loss, Drizzle will warn you about it and ask for confirmation.
+That's very handy when you have remote databases like Neon, Planetscale or Turso.
+
+Best use cases for `push` command:
+
+1. **Prototyping and Experimentation:** Ideal for situations where you need to quickly test new schema designs or changes in a local development environment, allowing for fast iterations without the overhead of managing migration files.
+2. **Use with Managed Database Services:** Beneficial when working with external database providers (like PlanetScale) that handle migrations and schema changes for you, simplifying the process by directly integrating with their systems.
+3. **Focus on the Desired End-State:** The drizzle-kit push command prioritizes achieving the final desired state of your database schema as defined in your code. It does not focus on the individual changes or steps necessary to reach that end-state. 
+4. **Initial Schema Setup:** Helpful at the beginning stages of a project for initial schema setup, where changes are frequent and the database is not yet in a production state.
+
+### How it works?
+
+1. **Retrieve Schema Details from the Database:** Drizzle first retrieves the existing schema from your database and converts it into the "drizzle-schema" format.
+2. **Acquire Schema Details from Your Schema Files:** Drizzle then reads all your schema files containing drizzle tables and similarly converts them into the "drizzle-schema" format.
+3. **Compare Schema Details from the Database and Schema File:** Drizzle compares the two schemas to identify any differences. It then executes statements to align the database schema with your code-defined schema. These statements ensure that the database is synchronized with the schemas defined in your code.
+
+### Benefits and Drawbacks
+
+**Benefits**                              | **Drawbacks**                                                                                                             |
+|------------------------------------------|---------------------------------------------------------------------------------------------------------------------------|
+| No need to manage SQL migration files. | No way to track schema changes in your codebase.                                                                      |
+| Easy process of rapid prototyping and experimentation. | No way to replicate your schema changes in other environments without losing data. (You can use `drizzle-kit push` for prototyping, but you should use migrations to commit the schema changes and apply these in your other environments) |
+|                                          | Changes are applied directly to the database, so you can't rollback them.                                              |
+
+### Quickstart
+
+This guide will demonstrate how to use `drizzle-kit push` command to manage schema changes in your project. We recommend you to use `verbose` and `strict` options in your Drizzle config. `verbose:true` option will print all statements that Drizzle is going to execute in order to sync your schema. `strict:true` option will make Drizzle always ask for your confirmation about actions to be taken, even if they do not result in data loss.
+
+
+1. **Create Local Database:** Start by setting up a local database. This local environment will be used for experimenting with new features and schema changes.
+2. **Develop new features locally:** For example, we need to create a new table called `users`.
+
+```ts copy filename="src/schema.ts"
+// Declare your schema
+import { pgTable, serial, text } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  firstName: text('firstName').notNull(),
+  lastName: text('lastName').notNull(),
+});
+```
+
+```ts copy filename="drizzle.config.ts"
+// Create the config
+import type { Config } from 'drizzle-kit';
+import { resolve } from 'node:path';
+
+export default {
+  driver: 'pg',
+  out: './src/db/migrations',
+  schema: [resolve(__dirname, './src/db/schema.ts')],
+  dbCredentials: {
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT,
+    user: process.env.DB_USERNAME,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+  },
+  // Print all statements
+  verbose: true,
+  // Always ask for confirmation
+  strict: true,
+} satisfies Config;
+```
+
+3. **Apply changes:** Use the `drizzle-kit push:pg` command to apply your schema changes to the local database. After running the command, the `users` table will be created automatically.
+4. **Insert data:** Insert some data into the `users` table.
+
+```ts
+// Insert data
+await db.insert(users).values({
+  firstName: 'John',
+  lastName: 'Doe',
+});
+```
+5. **Continue to make changes:** Continue to make schema changes and run `drizzle-kit push:pg` again to apply them to the database. For example, we need to add a new column called `email` to the `users` table.
+
+```ts copy filename="src/schema.ts"
+// Update your schema
+import { pgTable, serial, text } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  firstName: text('firstName').notNull(),
+  lastName: text('lastName').notNull(),
+  email: text('email').notNull(),
+});
+```
+
+`drizzle-kit push:pg` will prompt you to truncate the table because you cannot add a non-null `email` column without default value to the table, which contains 1 items.
+Confirm data loss and apply changes to your database (or abort the process).
+
+The logic of using `drizzle-kit push` command is concluded at this point. As we know, it does not generate migrations that you can modify to preserve data. So, if you want to apply the changes to other environments, you can follow these steps:
+
+1. **Generate migration files:** Once you are happy with the changes you can initialize a migration history by running `drizzle-kit generate:pg`. This command will generate a migration file with the final draft of your prototyping. The steps taken to reach the prototype are not preserved - `drizzle-kit push` does not generate a history.
+2. **Apply migration files to other environments:** You can apply migration files to other environments like development or production.
+
+### Prototyping with an existing migration history
+
+We can also use `drizzle-kit push` command with an existing migration history. Let's assume that we have a migration history.
+
+```ts copy filename="drizzle.config.ts"
+// Our drizzle config
+import type { Config } from 'drizzle-kit';
+import { resolve } from 'node:path';
+
+export default {
+  driver: 'pg',
+  out: './src/db/migrations',
+  schema: [resolve(__dirname, './src/db/schema.ts')],
+  dbCredentials: {
+    host: process.env.DB_HOST,
+    port: process.env.DB_PORT,
+    user: process.env.DB_USERNAME,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+  },
+  verbose: true,
+  strict: true,
+} satisfies Config;
+```
+
+```ts copy filename="src/schema.ts"
+// Our schemas
+import { integer, pgTable, serial, text } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  firstName: text('firstName').notNull(),
+  lastName: text('lastName').notNull(),
+  email: text('email').notNull(),
+  age: integer('age'),
+});
+
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: text('title').notNull(),
+  content: text('content').notNull(),
+  userId: integer('userId')
+    .references(() => users.id)
+    .notNull(),
+});
+```
+1. **Develop new features locally:** Again we can create local database and execute migrations that we already have.
+2. **Сhange drizzle schema and apply changes with `drizzle-kit push` command:** prototype new feature, which can involve any number of steps. For example, you can:
+- Add `city` column to the `users` table. Then run `drizzle-kit push:pg` to apply changes to the database.
+- Add `country` column to the `users` table. Then run `drizzle-kit push:pg` to apply changes to the database.
+- Add `address` column to the `users` table. Then run `drizzle-kit push:pg` to apply changes to the database.
+- Remove `address` column from the `users` table, because you changed your mind. Then run `drizzle-kit push:pg` to apply changes to the database.
+
+After experimenting with several solutions, the final schema change looks like this:
+
+```ts copy filename="src/schema.ts"
+import { integer, pgTable, serial, text } from 'drizzle-orm/pg-core';
+
+export const users = pgTable('users', {
+  id: serial('id').primaryKey(),
+  firstName: text('firstName').notNull(),
+  lastName: text('lastName').notNull(),
+  email: text('email').notNull(),
+  age: integer('age'),
+  city: text('city').notNull(),
+  country: text('country').notNull(),
+});
+
+export const posts = pgTable('posts', {
+  id: serial('id').primaryKey(),
+  title: text('title').notNull(),
+  content: text('content').notNull(),
+  userId: integer('userId')
+    .references(() => users.id)
+    .notNull(),
+});
+```
+3. **Generate migration files:** To create migration that adds new `city` and `country` columns, run the `drizzle-kit generate:pg` command.
+4. **Apply migration files to other environments:** You can apply migration files to other environments like development or production.
+
+**So, we have next schema management flow:**
+1. Create a local database database.
+2. Run the current set of migrations there.
+3. Change your drizzle schema.
+4. Apply new changes with `drizzle-kit push` command.
+5. Generate a migration file with `drizzle-kit generate` command.
+6. Optionally, you can drop your database and recreate it from a set of migrations you had.
+7. Apply migration files to other environments like development or production.
+
+**In case you want to push your schema directly to a production database, follow these steps:**
+1. Change your drizzle schema.
+2. Apply new changes with `drizzle-kit push` command on a production database.
+
+**Note:** This approach is risky and not recommended for usage on production databases. Be aware of possible data loss statements that may truncate data you don’t want to lose. Drizzle will warn you and ask for your confirmation.
+
+## Best practices with PlanetScale
+
+We recommend you to use `drizzle-kit push` command with [PlanetScale](https://planetscale.com/docs/concepts/what-is-planetscale) instead of `drizzle-kit generate` command because of branching workflow and deploy requests. PlanetScale will automatically compare the two schemas and generate its own schema difference. To learn more, see [PlanetScale Branching](https://planetscale.com/docs/concepts/planetscale-workflow#planetscale-branching) and [Deploy requests](https://planetscale.com/docs/concepts/planetscale-workflow#deploy-requests) 
+
+```bash copy
+  npm i drizzle-orm @planetscale/database
+  npm i -D drizzle-kit
+```
+
+```ts copy filename="src/db.ts"
+// Create the connection
+import { connect } from '@planetscale/database';
+import { drizzle } from 'drizzle-orm/planetscale-serverless';
+import * as schema from './schema';
+
+const connection = connect({
+  host: process.env.DB_HOST,
+  username: process.env.DB_USERNAME,
+  password: process.env.DB_PASSWORD,
+});
+
+export const db = drizzle(connection, { schema });
+```
+
+```ts copy filename="src/schema.ts"
+// Declare your schema
+import { mysqlTable, serial, text } from 'drizzle-orm/mysql-core';
+
+export const users = mysqlTable('users', {
+  id: serial('id').primaryKey(),
+  firstName: text('firstName').notNull(),
+  lastName: text('lastName').notNul(),
+});
+```
+
+```ts copy filename="drizzle.config.ts"
+// Create the config
+import type { Config } from 'drizzle-kit';
+import { resolve } from 'node:path';
+
+export default {
+  driver: 'mysql2',
+  out: './src/db/migrations',
+  schema: [resolve(__dirname, './src/db/schema.ts')],
+  dbCredentials: {
+    uri: `mysql://${process.env.DB_USERNAME}:${process.env.DB_PASSWORD}@${process.env.DB_HOST}/test?ssl={"rejectUnauthorized":true}`,
+  },
+  verbose: true,
+  strict: true,
+} satisfies Config;
+```
+
+Now we can run `drizzle-kit push:mysql` to push our schema changes directly to the database. `users` table will be created automatically. Then we can continue to make schema changes and run `drizzle-kit push:mysql` again to apply them to the database.
+
+Once you are happy with the changes on your development branch, you can open a deploy request to deploy these to your production branch. During deploy request PlanetScale analyzes the schema changes when they are added to the deploy queue to ensure that the changes do not conflict with any of the queued schema changes. If successful, your deploy request has now been merged into production. 
