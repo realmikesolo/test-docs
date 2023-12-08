@@ -1,0 +1,1102 @@
+## Getting Started
+
+In this guide, we will demonstrate how to migrate a simple **TypeORM** project to **Drizzle ORM**. We'll compare the implementation of similar functionalities using both libraries. For our database, we will use PostgreSQL, hence we'll select `pg` as the database driver.
+
+## Installation
+
+Firstly, we need to install both **Drizzle ORM** and **TypeORM**.
+
+### TypeORM
+
+1. Install the **TypeORM** npm package::
+
+```bash
+npm i typeorm
+```
+
+2. Install the `PostgreSQL` database driver::
+
+```bash
+npm i pg
+```
+
+3. Install the reflect-metadata shim (necessary for **TypeORM**):
+
+```bash
+npm i reflect-metadata
+```
+
+4. Optionally, install TypeScript types for `PostgreSQL`:
+
+```bash
+npm i @types/pg
+```
+
+### Drizzle ORM
+
+1. Install the **Drizzle ORM** npm package:
+
+```bash
+npm i drizzle-orm
+```
+
+2. Install the `PostgreSQL` database driver:
+
+```bash
+npm i pg
+```
+
+3. Install `drizzle-kit` for migration generation and rapid prototyping:
+
+```bash
+npm i -D drizzle-kit
+```
+
+4. Optionally, install TypeScript types for `PostgreSQL`:
+
+```bash
+npm i @types/pg
+```
+
+## Initialization
+
+### TypeORM
+
+#### Typescript configuration
+
+Ensure you're using TypeScript version 4.5 or higher. In your `tsconfig.json`, enable the following settings:
+```json
+{
+  "compilerOptions": {
+    "emitDecoratorMetadata": true,
+    "experimentalDecorators": true,
+  }
+}
+```
+
+You may also need to enable es6 in the lib section of compiler options, or install es6-shim from @types.
+
+
+#### Connection
+
+To establish a database connection, create a `typeorm.config.ts` file and set up the [DataSource](https://typeorm.io/data-source). This will also be used with the **TypeORM CLI** for managing migrations.
+
+```typescript copy filename="src/db/typeorm.config.ts"
+import 'dotenv/config';
+import { DataSource } from 'typeorm';
+import { resolve } from 'node:path';
+
+export default new DataSource({
+  type: 'postgres',
+  host: process.env.DB_HOST,
+  port: Number(process.env.DB_PORT),
+  database: process.env.DB_NAME,
+  username: process.env.DB_USERNAME,
+  password: process.env.DB_PASSWORD,
+  logging: true,
+  // Entities to be loaded for this connection
+  entities: [],
+  // Indicates if database schema should be auto created on every application launch
+  synchronize: true,
+});
+```
+
+We will use `synchronize: true` only for local development and testing.
+
+```typescript copy filename="src/index.ts"
+import 'dotenv/config';
+import 'reflect-metadata';
+
+(async () => {
+  await dataSource.initialize();
+})();
+```
+
+Add the following scripts to your package.json for migration management:
+
+```json
+{
+  "scripts": {
+    "typeorm:cli": "typeorm-ts-node-commonjs -d ./src/core/db/typeorm.config.ts",
+    "migration:generate": "npm run typeorm:cli -- migration:generate",
+  }
+}
+```
+
+### Drizzle ORM
+
+We don't need any additional typescript configuration for drizzle. So, we will start with the connection.
+
+#### Connection
+
+For **Drizzle ORM**, create a `db.ts` file to set up the `PostgreSQL` client and initialize **Drizzle**.
+
+```typescript copy filename="src/db/db.ts"
+import { Client } from 'pg';
+import { drizzle } from 'drizzle-orm/node-postgres';
+
+export const client = new Client({
+  host: process.env.DB_HOST,
+  port: Number(process.env.DB_PORT),
+  user: process.env.DB_USERNAME,
+  password: process.env.DB_PASSWORD,
+  database: process.env.DB_NAME,
+});
+
+export const db = drizzle(client);
+```
+
+```typescript copy filename="src/index.ts"
+import 'dotenv/config';
+import { client } from './db/db';
+
+(async () => {
+  await client.connect();
+})();
+```
+
+Next we will configure our `drizzle.config.ts`. It is used by **Drizzle Kit** and contains all the information about your database connection, migration folder and schema files.
+In our project we will use **Drizzle Kit** for migrations generation and rapid prototyping.
+
+```typescript copy filename="drizzle.config.ts"
+import type { Config } from 'drizzle-kit';
+import { resolve } from 'node:path';
+
+export default {
+  driver: 'pg',
+  out: './src/db/migrations',
+  schema: [resolve(__dirname, './src/db/schema.ts')],
+  dbCredentials: {
+    host: process.env.DB_HOST,
+    port: Number(process.env.DB_PORT),
+    user: process.env.DB_USERNAME,
+    password: process.env.DB_PASSWORD,
+    database: process.env.DB_NAME,
+  },
+  // `verbose: true` option will print all statements that Drizzle is going to execute in order to sync your schema.
+  verbose: true,
+} satisfies Config;
+```
+
+Update your `package.json` with Drizzle-specific scripts:
+
+```json
+{
+  "scripts": {
+    "migration:generate": "drizzle-kit generate:pg",
+    "db:push": "drizzle-kit push:pg"
+  }
+}
+```
+
+The `drizzle-kit push` command applies schema changes directly to the database.
+
+## Create an entity
+
+### TypeORM
+
+To create a `suppliers` table with `id`, `companyName`, `city`, and `country` columns in **TypeORM**, follow these steps:
+
+1. Define the `Supplier` entity:
+
+```typescript copy filename="src/db/entities/supplier.entity.ts"
+import { Column, Entity, PrimaryGeneratedColumn } from 'typeorm';
+
+@Entity({ name: 'suppliers' })
+export class Supplier {
+  @PrimaryGeneratedColumn('increment')
+  public id: number;
+
+  @Column({ type: 'text' })
+  public companyName: string;
+
+  @Column({ type: 'text', nullable: true })
+  public city: string;
+
+  @Column({ type: 'text' })
+  public country: string;
+}
+```
+
+2. Update the data source to include the new entity:
+
+```typescript copy filename="src/db/typeorm.config.ts"
+import 'dotenv/config';
+import { DataSource } from 'typeorm';
+import { resolve } from 'node:path';
+import { Supplier } from '../../app/entities/supplier.entity';
+
+export default new DataSource({
+  // database configuration
+  entities: [Supplier],
+  synchronize: true,
+});
+```
+
+Running the application with synchronize: true will automatically create the Supplier entity in the database.
+
+### Drizzle ORM
+
+To create the same `suppliers` table in Drizzle ORM:
+
+1. Define the table schema:
+
+```typescript copy filename="src/db/schema.ts"
+import { pgTable, serial, text } from 'drizzle-orm/pg-core';
+
+export const suppliers = pgTable('suppliers', {
+  id: serial('id').primaryKey(),
+  companyName: text('companyName').notNull(),
+  city: text('city'),
+  country: text('country').notNull(),
+});
+```
+
+2. Apply the changes to the database:
+
+Execute the command npm run db:push. Drizzle will prompt for confirmation before executing the statement to create the `suppliers` table.
+
+## Add `one-to-many` relation
+
+### TypeORM
+
+To establish a `one-to-many` relation between `suppliers` and a new table `products`, follow these steps:
+
+1. Define the `Product` entity with a foreign key to `suppliers`:
+
+```typescript copy filename="src/db/entities/product.entity.ts"
+import { Column, Entity, JoinColumn, ManyToOne, PrimaryGeneratedColumn } from 'typeorm';
+import { Supplier } from './supplier.entity';
+
+@Entity({ name: 'products' })
+export class Product {
+  @PrimaryGeneratedColumn('increment')
+  public id: number;
+
+  @Column({ type: 'text' })
+  public name: string;
+
+  @Column({ type: 'integer' })
+  public supplierId: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 4 })
+  public unitPrice: number;
+
+  @Column({ type: 'integer' })
+  public unitsInStock: number;
+
+  @ManyToOne(() => Supplier, (supplier) => supplier.products)
+  @JoinColumn({ name: 'supplierId', referencedColumnName: 'id' })
+  public supplier: Supplier;
+}
+```
+
+2. Update the `Supplier` entity to include the `one-to-many` relation:
+
+```typescript copy filename="src/db/entities/supplier.entity.ts"
+import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { Product } from './product.entity';
+
+@Entity({ name: 'suppliers' })
+export class Supplier {
+  @PrimaryGeneratedColumn('increment')
+  public id: number;
+
+  @Column({ type: 'text' })
+  public companyName: string;
+
+  @Column({ type: 'text', nullable: true })
+  public city: string;
+
+  @Column({ type: 'text' })
+  public country: string;
+
+  @OneToMany(() => Product, (product) => product.supplier)
+  public products: Product[];
+}
+```
+
+3. Load the `Product` entity in your data source:
+
+```typescript copy filename="src/db/typeorm.config.ts"
+import 'dotenv/config';
+import { DataSource } from 'typeorm';
+import { resolve } from 'node:path';
+import { Supplier } from '../../app/entities/supplier.entity';
+import { Product } from '../../app/entities/product.entity';
+
+export default new DataSource({
+  type: 'postgres',
+  host: process.env.DB_HOST,
+  port: Number(process.env.DB_PORT),
+  database: process.env.DB_NAME,
+  username: process.env.DB_USERNAME,
+  password: process.env.DB_PASSWORD,
+  logging: true,
+  // Entities to be loaded for this connection
+  entities: [Supplier, Product],
+  synchronize: true,
+});
+```
+
+Running your application with synchronize: true will automatically apply these changes to the database.
+
+### Drizzle ORM
+
+To create a `products` table with a relation to `suppliers`:
+
+1. Define the `products` table schema with a foreign key constraint:
+
+```typescript copy filename="src/db/schema.ts"
+import { decimal, integer, pgTable, serial, text } from 'drizzle-orm/pg-core';
+
+export const suppliers = pgTable('suppliers', {
+  id: serial('id').primaryKey(),
+  companyName: text('companyName').notNull(),
+  city: text('city'),
+  country: text('country').notNull(),
+});
+
+export const products = pgTable('products', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  supplierId: integer('supplierId')
+    .references(() => suppliers.id)
+    .notNull(),
+  unitPrice: decimal('unitPrice', { precision: 10, scale: 4 }).notNull(),
+  unitsInStock: integer('unitsInStock').notNull(),
+});
+```
+
+2. Apply the changes to the database:
+
+Run `npm run db:push`. **Drizzle** will prompt for confirmation before executing the statements to create the `products` table and establish the foreign key constraint.
+
+## Add `many-to-many` relation
+
+### TypeORM
+
+To establish a `many-to-many` relation between `orders` and `products`, follow these steps:
+
+1. Define the `Order` entity:
+
+```typescript copy filename="src/db/entities/order.entity.ts"
+import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { OrderDetail } from './order-detail.entity';
+
+@Entity({ name: 'orders' })
+export class Order {
+  @PrimaryGeneratedColumn('increment')
+  public id: number;
+
+  @Column({ type: 'date' })
+  public orderDate: Date;
+
+  @Column({ type: 'date', nullable: true })
+  public shippedDate: Date;
+
+  @Column({ type: 'text' })
+  public shipAddress: string;
+
+  @Column({ type: 'text', nullable: true })
+  public shipPostalCode: string;
+
+  @Column({ type: 'text' })
+  public shipCountry: string;
+
+  @OneToMany(() => OrderDetail, (orderDetail) => orderDetail.order)
+  public orderDetails: OrderDetail[];
+}
+```
+
+2. Define the `OrderDetail` entity, acting as a join table:
+
+```typescript copy filename="src/db/entities/order-detail.entity.ts"
+import { Column, Entity, JoinColumn, ManyToOne, PrimaryColumn } from 'typeorm';
+import { Order } from './order.entity';
+import { Product } from './product.entity';
+
+@Entity({ name: 'order_details' })
+export class OrderDetail {
+  @PrimaryColumn({ type: 'integer' })
+  public orderId: number;
+
+  @PrimaryColumn({ type: 'integer' })
+  public productId: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 4 })
+  public unitPrice: number;
+
+  @Column({ type: 'integer' })
+  public quantity: number;
+
+  @Column({ type: 'real' })
+  public discount: number;
+
+  @ManyToOne(() => Order, (order) => order.orderDetails)
+  @JoinColumn({ name: 'orderId', referencedColumnName: 'id' })
+  public order: Order;
+
+  @ManyToOne(() => Product, (product) => product.orderDetails)
+  @JoinColumn({ name: 'productId', referencedColumnName: 'id' })
+  public product: Product;
+}
+```
+
+3. Update the `Product` entity to include the reverse relation:
+
+```typescript copy filename="src/db/entities/product.entity.ts"
+import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { OrderDetail } from './order-detail.entity';
+import { Supplier } from './supplier.entity';
+
+@Entity({ name: 'products' })
+export class Product {
+  @PrimaryGeneratedColumn('increment')
+  public id: number;
+
+  @Column({ type: 'text' })
+  public name: string;
+
+  @Column({ type: 'integer' })
+  public supplierId: number;
+
+  @Column({ type: 'decimal', precision: 10, scale: 4 })
+  public unitPrice: number;
+
+  @Column({ type: 'integer' })
+  public unitsInStock: number;
+
+  @OneToMany(() => OrderDetail, (orderDetail) => orderDetail.product)
+  public orderDetails: OrderDetail[];
+
+  @ManyToOne(() => Supplier, (supplier) => supplier.products)
+  @JoinColumn({ name: 'supplierId', referencedColumnName: 'id' })
+  public supplier: Supplier;
+}
+```
+
+4. Load the `Order` and `OrderDetail` entities in your data source:
+
+```typescript copy filename="src/db/typeorm.config.ts"
+import 'dotenv/config';
+import { DataSource } from 'typeorm';
+import { resolve } from 'node:path';
+import { Supplier } from '../../app/entities/supplier.entity';
+import { Product } from '../../app/entities/product.entity';
+import { Order } from '../../app/entities/order.entity';
+import { OrderDetail } from '../../app/entities/order-detail.entity';
+
+export default new DataSource({
+  // database configuration
+  entities: [Supplier, Product, Order, OrderDetail],
+  synchronize: true,
+});
+```
+
+Running your application with `synchronize: true` will automatically apply these changes to the database.
+
+### Drizzle ORM
+
+For **Drizzle ORM**, define `orders` and `order_details` tables:
+
+1. Define the `orders` and `order_details` table schemas:
+
+```typescript copy filename="src/db/schema.ts"
+import { date, decimal, integer, pgTable, primaryKey, real, serial, text } from 'drizzle-orm/pg-core';
+
+export const suppliers = pgTable('suppliers', {
+  id: serial('id').primaryKey(),
+  companyName: text('companyName').notNull(),
+  city: text('city'),
+  country: text('country').notNull(),
+});
+
+export const products = pgTable('products', {
+  id: serial('id').primaryKey(),
+  name: text('name').notNull(),
+  supplierId: integer('supplierId')
+    .references(() => suppliers.id)
+    .notNull(),
+  unitPrice: decimal('unitPrice', { precision: 10, scale: 4 }).notNull(),
+  unitsInStock: integer('unitsInStock').notNull(),
+});
+
+export const orders = pgTable('orders', {
+  id: serial('id').primaryKey(),
+  orderDate: date('orderDate').notNull(),
+  shippedDate: date('shippedDate'),
+  shipAddress: text('shipAddress').notNull(),
+  shipPostalCode: text('shipPostalCode'),
+  shipCountry: text('shipCountry').notNull(),
+});
+
+export const orderDetails = pgTable(
+  'order_details',
+  {
+    orderId: integer('orderId').references(() => orders.id),
+    productId: integer('productId').references(() => products.id),
+    unitPrice: decimal('unitPrice', { precision: 10, scale: 4 }).notNull(),
+    quantity: integer('quantity').notNull(),
+    discount: real('discount').notNull(),
+  },
+  // Composite primary key
+  (table) => ({
+    pk: primaryKey({ columns: [table.orderId, table.productId] }),
+  }),
+);
+```
+
+2. Apply the changes to the database:
+
+Run `npm run db:push`. **Drizzle** will prompt for confirmation before executing the statements to create the `orders` and `order_details` tables and establish the foreign key constraints.
+
+## Migrations
+
+Once you are satisfied with your schemas, it's time to generate and apply migrations to the database.
+
+### TypeORM
+
+1. Update your `typeorm.config.ts` file to specify the migrations folder and disable `synchronize: true`:
+
+```typescript copy filename="src/db/typeorm.config.ts"
+import 'dotenv/config';
+import { DataSource } from 'typeorm';
+import { resolve } from 'node:path';
+import { Supplier } from '../../app/entities/supplier.entity';
+import { Product } from '../../app/entities/product.entity';
+import { Order } from '../../app/entities/order.entity';
+import { OrderDetail } from '../../app/entities/order-detail.entity';
+
+export default new DataSource({
+  type: 'postgres',
+  host: process.env.DB_HOST,
+  port: Number(process.env.DB_PORT),
+  database: process.env.DB_NAME,
+  username: process.env.DB_USERNAME,
+  password: process.env.DB_PASSWORD,
+  logging: true,
+  entities: [Supplier, Product, Order, OrderDetail],
+  migrationsRun: true,
+  migrations: [resolve(__dirname, './migrations/*.{js,ts}')],
+});
+```
+
+In **TypeORM**, it's important to note that any changes made to the database schema while using `synchronize: true` will not be automatically recorded in migration files. If you want to preserve a history of these changes for version control or deployment purposes, you will need to manually generate migration files for each change using the `npm run migration:generate` command. This way, you can ensure that all schema modifications are properly documented in migration files.
+
+2. For instance, add a nullable `fax` column to the `suppliers` table:
+
+```typescript copy filename="src/db/entities/supplier.entity.ts"
+import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
+import { Product } from './product.entity';
+
+@Entity({ name: 'suppliers' })
+export class Supplier {
+  @PrimaryGeneratedColumn('increment')
+  public id: number;
+
+  @Column({ type: 'text' })
+  public companyName: string;
+
+  @Column({ type: 'text', nullable: true })
+  public city: string;
+
+  @Column({ type: 'text' })
+  public country: string;
+
+  @Column({ type: 'text', nullable: true })
+  public fax: string;
+
+  @OneToMany(() => Product, (product) => product.supplier)
+  public products: Product[];
+}
+```
+
+3. Generate the migration file:
+
+```bash
+npm run migration:generate ./src/core/db/migrations/init
+```
+
+4. Run your application to apply the migration, thanks to migrationsRun: true.
+
+### Drizzle ORM
+
+1. Update the `suppliers` table schema to add a nullable `fax` column:
+
+```typescript copy filename="src/db/schema.ts"
+import { date, decimal, integer, pgTable, primaryKey, real, serial, text } from 'drizzle-orm/pg-core';
+
+export const suppliers = pgTable('suppliers', {
+  id: serial('id').primaryKey(),
+  companyName: text('companyName').notNull(),
+  city: text('city'),
+  country: text('country').notNull(),
+  fax: text('fax'),
+});
+
+// other schemas...
+```
+
+2. Apply the schema changes:
+
+```bash
+npm run db:push
+```
+
+3. Generate the migration file:
+
+```bash
+npm run migration:generate
+```
+
+**Drizzle** will include all changes made in the schema, including those applied by `npm run db:push`. The migration file will contain SQL code that represents the schema changes made to your database.
+
+4. Optionally, you can use the `npx drizzle-kit studio` command to explore your schemas visually in a browser-based interface, providing a convenient way to inspect and manage your database structure.
+
+## Insert data
+
+Let's insert some data to our tables.
+
+### TypeORM
+
+#### Insert one row
+
+```typescript
+const repository = dataSource.getRepository(Supplier);
+
+const supplier = repository.create({
+  companyName: 'TestCompanyName',
+  city: 'TestCity',
+  country: 'TestCountry',
+});
+
+await repository.save(supplier);
+```
+
+#### Insert multiple rows
+
+```typescript
+const repository = dataSource.getRepository(Supplier);
+
+const suppliers = repository.create([
+  {
+    companyName: 'TestCompanyName2',
+    city: 'TestCity2',
+    country: 'TestCountry2',
+  },
+  {
+    companyName: 'TestCompanyName3',
+    city: 'TestCity3',
+    country: 'TestCountry3',
+  },
+]);
+
+await repository.save(suppliers);
+```
+
+Now let's insert data to other tables
+
+```typescript
+// Insert products
+const repository = dataSource.getRepository(Product);
+
+const products = repository.create([
+  {
+    name: 'TestProductName2',
+    supplierId: 1,
+    unitPrice: 10,
+    unitsInStock: 10,
+  },
+  {
+    name: 'TestProductName3',
+    supplierId: 1,
+    unitPrice: 25,
+    unitsInStock: 7,
+  },
+  {
+    name: 'TestProductName4',
+    supplierId: 2,
+    unitPrice: 50,
+    unitsInStock: 5,
+  },
+  {
+    name: 'TestProductName5',
+    supplierId: 3,
+    unitPrice: 100,
+    unitsInStock: 2,
+  },
+]);
+```
+
+```typescript
+// Insert orders
+const repository = dataSource.getRepository(Order);
+
+const orders = repository.create([
+  {
+    orderDate: new Date(),
+    shipAddress: 'TestShipAddress2',
+    shipPostalCode: 'TestShipPostalCode2',
+    shipCountry: 'TestShipCountry2',
+  },
+  {
+    orderDate: new Date(),
+    shippedDate: new Date(Date.now() + 1000 * 60 * 60 * 24),
+    shipAddress: 'TestShipAddress3',
+    shipPostalCode: 'TestShipPostalCode3',
+    shipCountry: 'TestShipCountry3',
+  },
+]);
+
+await repository.save(orders);
+```
+
+```typescript
+// Insert order details
+const repository = dataSource.getRepository(OrderDetail);
+
+const orderDetails = repository.create([
+  {
+    orderId: 1,
+    productId: 1,
+    unitPrice: 10,
+    quantity: 1,
+    discount: 0,
+  },
+  {
+    orderId: 1,
+    productId: 2,
+    unitPrice: 25,
+    quantity: 7,
+    discount: 0,
+  },
+  {
+    orderId: 2,
+    productId: 3,
+    unitPrice: 50,
+    quantity: 5,
+    discount: 0,
+  },
+  {
+    orderId: 2,
+    productId: 4,
+    unitPrice: 100,
+    quantity: 2,
+    discount: 0,
+  },
+]);
+
+await repository.save(orderDetails);
+```
+
+### Drizzle ORM
+
+In **Drizzle**, you can write standard SQL queries for insertion.
+
+#### Insert one row
+
+```typescript
+await db.insert(suppliers).values({
+  companyName: 'TestCompanyName',
+  city: 'TestCity',
+  country: 'TestCountry',
+});
+```
+
+#### Insert multiple rows
+
+```typescript
+await db.insert(suppliers).values([
+  {
+    companyName: 'TestCompanyName2',
+    city: 'TestCity2',
+    country: 'TestCountry2',
+  },
+  {
+    companyName: 'TestCompanyName3',
+    city: 'TestCity3',
+    country: 'TestCountry3',
+  },
+]);
+```
+
+Now let's insert data to other tables
+
+```typescript
+// Insert products
+await db.insert(products).values([
+  {
+    name: 'TestProductName2',
+    supplierId: 1,
+    unitPrice: '10',
+    unitsInStock: 10,
+  },
+  {
+    name: 'TestProductName3',
+    supplierId: 1,
+    unitPrice: '25',
+    unitsInStock: 7,
+  },
+  {
+    name: 'TestProductName4',
+    supplierId: 2,
+    unitPrice: '50',
+    unitsInStock: 5,
+  },
+  {
+    name: 'TestProductName5',
+    supplierId: 3,
+    unitPrice: '100',
+    unitsInStock: 2,
+  },
+]);
+```
+
+```typescript
+// Insert orders
+await db.insert(orders).values([
+  {
+    orderDate: new Date().toISOString(),
+    shipAddress: 'TestShipAddress2',
+    shipPostalCode: 'TestShipPostalCode2',
+    shipCountry: 'TestShipCountry2',
+  },
+  {
+    orderDate: new Date().toISOString(),
+    shippedDate: new Date(Date.now() + 1000 * 60 * 60 * 24).toISOString(),
+    shipAddress: 'TestShipAddress3',
+    shipPostalCode: 'TestShipPostalCode3',
+    shipCountry: 'TestShipCountry3',
+  },
+]);
+```
+
+```typescript
+// Insert order details
+await db.insert(orderDetails).values([
+  {
+    orderId: 1,
+    productId: 1,
+    unitPrice: '10',
+    quantity: 1,
+    discount: 0,
+  },
+  {
+    orderId: 1,
+    productId: 2,
+    unitPrice: '25',
+    quantity: 7,
+    discount: 0,
+  },
+  {
+    orderId: 2,
+    productId: 3,
+    unitPrice: '50',
+    quantity: 5,
+    discount: 0,
+  },
+  {
+    orderId: 2,
+    productId: 4,
+    unitPrice: '100',
+    quantity: 2,
+    discount: 0,
+  },
+]);
+```
+
+## Select data
+
+### TypeORM
+
+#### Select one
+
+```typescript
+// Let's select one product by id with related supplier, but if we wan't to get only specific columns of `suppliers` table we can't do this with relations, so we have to select all columns.
+const repository = dataSource.getRepository(Product);
+
+const product = await repository.findOne({
+  where: { id: 1 },
+  relations: ['supplier'],
+})
+```
+
+Now, let's retrieve an `order` by ID and use aggregation functions to calculate `totalPrice`, `totalDiscount`, and `totalQuantity`. Since this query is complex, we'll use the query builder. Note that **TypeORM** doesn't provide types for queries, which can be problematic if column names change in your entity.
+
+```typescript
+const repository = dataSource.getRepository(Order);
+
+const queryBuilder = repository.createQueryBuilder('order');
+
+const order = await queryBuilder
+  .select([
+    'id',
+    'order.orderDate as "orderDate"',
+    'order.shipCountry as "shipCountry"',
+    'SUM(detail.unitPrice * detail.quantity)::float as "totalPrice"',
+    'SUM(detail.quantity)::int as "totalQuantity"',
+    'COUNT(detail.productId)::int as "totalProducts',
+  ])
+  .leftJoin('order.orderDetails', 'detail')
+  .groupBy('order.id')
+  .where('order.id = :id', { id: 1 })
+  .getRawOne();
+```
+
+#### Select multiple
+
+For simple queries, you can use the `findAndCount` method. However, if you need aggregation functions, you must use the query builder.
+
+```typescript
+// Let's explore how to fetch product data with pagination, search functionality and count rows
+import { ILike } from 'typeorm';
+
+const repostitory = dataSource.getRepository(Product);
+
+const [products, count] = await repostitory.findAndCount({
+  select: ['id', 'name', 'unitPrice', 'unitsInStock'],
+  where: {
+    name: ILike(`%test%`),
+  },
+  skip: 0,
+  take: 10,
+});
+```
+
+### Drizzle ORM
+
+One of the advantages of **Drizzle** is that you can write standard SQL queries and utilize the full power of SQL with TypeScript types. Your response will have fields corresponding to your selections.
+
+#### Select one
+
+In **Drizzle**, you can select specific columns from related tables. For instance, let's retrieve the `id` and `companyName` of the `supplier`. To fetch all columns, simply use `supplier: suppliers`, where suppliers is our schema for the `suppliers` table. Keep in mind that you get an array of rows, so you should access the first element of the array.
+
+```typescript
+import { products, suppliers } from '../../db/schema';
+import { eq } from 'drizzle-orm';
+
+const product = await db
+  .select({
+    product: products,
+    supplier: {
+      id: suppliers.id,
+      companyName: suppliers.companyName,
+    },
+  })
+  .from(products)
+  .where(eq(products.id, 1))
+  .leftJoin(suppliers, eq(suppliers.id, products.supplierId))
+```
+
+Now, let's perform the same query with aggregation functions as we did in **TypeORM**. Remember that you'll get an array of rows.
+
+```typescript
+import { orderDetails, orders } from '../../db/schema';
+import { eq, sql } from 'drizzle-orm';
+
+const order = await db
+  .select({
+    id: orders.id,
+    shipCountry: orders.shipCountry,
+    orderDate: orders.orderDate,
+    totalProducts: sql<number>`cast(count(${orderDetails.productId}) as int)`,
+    totalQuantity: sql<number>`cast(sum(${orderDetails.quantity}) as int)`,
+    totalPrice: sql<number>`cast(sum(${orderDetails.quantity} * ${orderDetails.unitPrice}) as float)`,
+  })
+  .from(orders)
+  .where(eq(orders.id, 1))
+  .groupBy(orders.id)
+  .leftJoin(orderDetails, eq(orderDetails.orderId, orders.id))
+```
+
+#### Select multiple
+
+Let's perform the same query as in **TypeORM**.
+
+```typescript
+import { ilike, sql } from 'drizzle-orm';
+import { products } from '../../db/schema';
+
+const whereOptions = ilike(products.name, `%test%`);
+
+const [products, count] = await Promise.all([
+  db
+    .select({
+      id: products.id,
+      name: products.name,
+      unitPrice: products.unitPrice,
+      unitsInStock: products.unitsInStock,
+    })
+    .from(products)
+    .where(whereOptions)
+    .limit(10)
+    .offset(0),
+  db
+    .select({ count: sql<number>`cast(count(${products.id}) as integer)` })
+    .from(products)
+    .where(whereOptions)
+])
+```
+
+## Update data
+
+Let's update a row with `id` 1 in the `suppliers` table. We will modify the `city` and `country` columns.
+
+### TypeORM
+
+```typescript
+const repository = dataSource.getRepository(Supplier);
+
+const supplier = await repository.findOneBy({ id: 1 });
+if (!supplier) {
+  throw new Error('Supplier not found');
+}
+
+supplier.city = 'TestCity1Updated';
+supplier.country = 'TestCountry1Updated';
+
+await repository.save(supplier);
+```
+
+### Drizzle ORM
+
+```typescript
+import { suppliers } from '../../db/schema';
+import { eq } from 'drizzle-orm';
+
+await db
+  .update(suppliers)
+  .set({
+    city: 'TestCity1Updated',
+    country: 'TestCountry1Updated',
+  })
+  .where(eq(suppliers.id, 1));
+```
+
+## Delete data
+
+Let's delete a row with `id` 1 in the `orders` table. First, we need to delete all related rows in the `order_details` table.
+
+### TypeORM
+
+```typescript
+const orderDetailRepository = dataSource.getRepository(OrderDetail);
+
+await orderDetailRepository.delete({ orderId: 1 });
+
+const orderRepository = dataSource.getRepository(Order);
+
+await orderRepository.delete({ id: 1 });
+```
+
+### Drizzle ORM
+
+```typescript
+import { eq } from 'drizzle-orm';
+import { orderDetails, orders } from '../../db/schema';
+
+await db.delete(orderDetails).where(eq(orderDetails.orderId, 1));
+
+await db.delete(orders).where(eq(orders.id, 1));
+```
