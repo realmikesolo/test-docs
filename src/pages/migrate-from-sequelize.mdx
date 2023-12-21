@@ -1,131 +1,215 @@
 ## Getting Started
 
-This guide provides a straightforward approach to migrating a basic **TypeORM** project to **Drizzle ORM**. Although the example focuses on `PostgreSQL`, the process is similar for other supported databases.
+This guide provides a straightforward approach to migrating a basic **Sequelize** project to **Drizzle ORM**. Although the example focuses on `PostgreSQL`, the process is similar for other supported databases.
 
 ### Overview of the migration process
 
-Regardless of your application type or API layer, the steps to transition from **TypeORM** to **Drizzle ORM** remain consistent:
+Regardless of your application type or API layer, the steps to transition from **Sequelize** to **Drizzle ORM** remain consistent:
 
 1. Install **Drizzle Kit**
 2. Setup **Drizzle config** file
 3. Introspect your database
 4. Install **Drizzle ORM**
 5. Connect **Drizzle ORM** to your database
-6. Transition your **TypeORM** queries to **Drizzle ORM** queries.
+6. Transition your **Sequelize** queries to **Drizzle ORM** queries.
 
-These steps are applicable whether you're developing a REST API (for example, with Express, Koa, or NestJS) or any other type of application that utilizes **TypeORM** for database interactions.
+These steps are applicable whether you're developing a REST API (for example, with Express, Koa, or NestJS) or any other type of application that utilizes **Sequelize** for database interactions.
 
-## Overview of the TypeORM project
+## Overview of the Sequelize project
 
 For this guide, we'll use a REST API built with `Express` as a sample project to migrate to **Drizzle ORM**. It has four entities:
 
-```typescript copy filename="src/entities/supplier.entity.ts"
-import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
-import { Product } from './product.entity';
+```typescript copy filename="src/db/models/supplier.ts"
+import { DataTypes, Model } from 'sequelize';
+import { Product } from './product';
+import { sequelize } from '../db';
 
-@Entity({ name: 'suppliers' })
-export class Supplier {
-  @PrimaryGeneratedColumn('increment')
-  public id: number;
+export class Supplier extends Model {}
 
-  @Column({ type: 'text' })
-  public companyName: string;
+Supplier.init(
+  {
+    id: {
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
+      primaryKey: true,
+    },
+    companyName: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+    },
+    city: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    country: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+    },
+  },
+  {
+    sequelize,
+    tableName: 'suppliers',
+    modelName: 'Supplier',
+    timestamps: false,
+  },
+);
 
-  @Column({ type: 'text', nullable: true })
-  public city: string;
+Supplier.hasMany(Product, {
+  foreignKey: 'supplierId',
+});
 
-  @Column({ type: 'text' })
-  public country: string;
-
-  @OneToMany(() => Product, (product) => product.supplier)
-  public products: Product[];
-}
+Product.belongsTo(Supplier, {
+  foreignKey: 'supplierId',
+  targetKey: 'id',
+});
 ```
 
-```typescript copy filename="src/entities/product.entity.ts"
-import { Column, Entity, JoinColumn, ManyToOne, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
-import { OrderDetail } from './order-detail.entity';
-import { Supplier } from './supplier.entity';
+```typescript copy filename="src/db/models/product.ts"
+import { DataTypes, Model } from 'sequelize';
+import { sequelize } from '../db';
 
-@Entity({ name: 'products' })
-export class Product {
-  @PrimaryGeneratedColumn('increment')
-  public id: number;
+export class Product extends Model {}
 
-  @Column({ type: 'text' })
-  public name: string;
-
-  @Column({ type: 'integer' })
-  public supplierId: number;
-
-  @Column({ type: 'decimal', precision: 10, scale: 4 })
-  public unitPrice: number;
-
-  @Column({ type: 'integer' })
-  public unitsInStock: number;
-
-  @OneToMany(() => OrderDetail, (orderDetail) => orderDetail.product)
-  public orderDetails: OrderDetail[];
-
-  @ManyToOne(() => Supplier, (supplier) => supplier.products)
-  @JoinColumn({ name: 'supplierId', referencedColumnName: 'id' })
-  public supplier: Supplier;
-}
+Product.init(
+  {
+    id: {
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
+      primaryKey: true,
+    },
+    name: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+    },
+    supplierId: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+      references: {
+        model: 'suppliers',
+        key: 'id',
+      },
+      field: 'supplierId',
+    },
+    unitPrice: {
+      type: DataTypes.DECIMAL,
+      allowNull: false,
+    },
+    unitsInStock: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+    },
+  },
+  {
+    sequelize,
+    tableName: 'products',
+    modelName: 'Product',
+    timestamps: false,
+  },
+);
 ```
 
-```typescript copy filename="src/entities/order.entity.ts"
-import { Column, Entity, OneToMany, PrimaryGeneratedColumn } from 'typeorm';
-import { OrderDetail } from './order-detail.entity';
+```typescript copy filename="src/db/models/order.ts"
+import { DataTypes, Model } from 'sequelize';
+import { sequelize } from '../db';
 
-@Entity({ name: 'orders' })
-export class Order {
-  @PrimaryGeneratedColumn('increment')
-  public id: number;
+export class Order extends Model {}
 
-  @Column({ type: 'date' })
-  public orderDate: Date;
-
-  @Column({ type: 'date', nullable: true })
-  public shippedDate: Date;
-
-  @Column({ type: 'text' })
-  public shipAddress: string;
-
-  @Column({ type: 'text', nullable: true })
-  public shipPostalCode: string;
-
-  @Column({ type: 'text' })
-  public shipCountry: string;
-
-  @OneToMany(() => OrderDetail, (orderDetail) => orderDetail.order)
-  public orderDetails: OrderDetail[];
-}
+Order.init(
+  {
+    id: {
+      type: DataTypes.INTEGER,
+      autoIncrement: true,
+      primaryKey: true,
+    },
+    orderDate: {
+      type: DataTypes.DATE,
+      allowNull: false,
+    },
+    shippedDate: {
+      type: DataTypes.DATE,
+      allowNull: true,
+    },
+    shipAddress: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+    },
+    shipPostalCode: {
+      type: DataTypes.TEXT,
+      allowNull: true,
+    },
+    shipCountry: {
+      type: DataTypes.TEXT,
+      allowNull: false,
+    },
+  },
+  {
+    sequelize,
+    tableName: 'orders',
+    modelName: 'Order',
+    timestamps: false,
+  },
+);
 ```
 
-```typescript copy filename="src/entities/order-detail.entity.ts"
-import { Column, Entity, JoinColumn, ManyToOne, PrimaryColumn } from 'typeorm';
-import { Order } from './order.entity';
-import { Product } from './product.entity';
+```typescript copy filename="src/db/models/order-detail.ts"
+import { DataTypes, Model } from 'sequelize';
+import { sequelize } from '../db';
+import { Order } from './order';
+import { Product } from './product';
 
-@Entity({ name: 'order_details' })
-export class OrderDetail {
-  @PrimaryColumn({ type: 'integer' })
-  public orderId: number;
+export class OrderDetail extends Model {}
 
-  @PrimaryColumn({ type: 'integer' })
-  public productId: number;
+OrderDetail.init(
+  {
+    orderId: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      references: {
+        model: Order,
+        key: 'id',
+      },
+      field: 'orderId',
+    },
+    productId: {
+      type: DataTypes.INTEGER,
+      primaryKey: true,
+      references: {
+        model: Product,
+        key: 'id',
+      },
+      field: 'productId',
+    },
+    quantity: {
+      type: DataTypes.INTEGER,
+      allowNull: false,
+    },
+  },
+  {
+    sequelize,
+    tableName: 'order_details',
+    modelName: 'OrderDetail',
+    timestamps: false,
+  },
+);
 
-  @Column({ type: 'integer' })
-  public quantity: number;
+Order.hasMany(OrderDetail, { foreignKey: 'orderId', as: 'details' });
+OrderDetail.belongsTo(Order, { foreignKey: 'orderId' });
 
-  @ManyToOne(() => Order, (order) => order.orderDetails)
-  @JoinColumn({ name: 'orderId', referencedColumnName: 'id' })
-  public order: Order;
+Product.hasMany(OrderDetail, { foreignKey: 'productId', as: 'details' });
+OrderDetail.belongsTo(Product, { foreignKey: 'productId' });
 
-  @ManyToOne(() => Product, (product) => product.orderDetails)
-  @JoinColumn({ name: 'productId', referencedColumnName: 'id' })
-  public product: Product;
-}
+Order.belongsToMany(Product, {
+  through: OrderDetail,
+  foreignKey: 'orderId',
+  as: 'products',
+  targetKey: 'id',
+});
+Product.belongsToMany(Order, {
+  through: OrderDetail,
+  foreignKey: 'productId',
+  as: 'orders',
+  targetKey: 'id',
+});
 ```
 
 The models have the following relations:
@@ -135,35 +219,126 @@ The models have the following relations:
 
 For `many-to-many` relation we will create a join table `order_details`, so `Order` and `Product` entities will have `one-to-many` relations with `OrderDetail` entity.
 
-The corresponding tables have been created using a generated TypeORM migration.
+The corresponding tables have been created using Sequelize migration. Sequelize doesn't support auto generation of migrations, so you have to write them manually.
 
-```typescript copy filename="src/db/migrations/1702216840703-init.ts"
-import { MigrationInterface, QueryRunner } from "typeorm";
+```javascript copy filename="src/db/migrations/20231220152726-init.js"
+'use strict';
 
-export class Init1702216840703 implements MigrationInterface {
-    name = 'Init1702216840703'
+module.exports = {
+  async up(queryInterface, Sequelize) {
+    await queryInterface.createTable('suppliers', {
+      id: {
+        type: Sequelize.INTEGER,
+        autoIncrement: true,
+        primaryKey: true,
+      },
+      companyName: {
+        type: Sequelize.TEXT,
+        allowNull: false,
+      },
+      city: {
+        type: Sequelize.TEXT,
+        allowNull: true,
+      },
+      country: {
+        type: Sequelize.TEXT,
+        allowNull: false,
+      },
+    });
 
-    public async up(queryRunner: QueryRunner): Promise<void> {
-        await queryRunner.query(`CREATE TABLE "orders" ("id" SERIAL NOT NULL, "orderDate" date NOT NULL, "shippedDate" date, "shipAddress" text NOT NULL, "shipPostalCode" text, "shipCountry" text NOT NULL, CONSTRAINT "PK_710e2d4957aa5878dfe94e4ac2f" PRIMARY KEY ("id"))`);
-        await queryRunner.query(`CREATE TABLE "suppliers" ("id" SERIAL NOT NULL, "companyName" text NOT NULL, "city" text, "country" text NOT NULL, CONSTRAINT "PK_b70ac51766a9e3144f778cfe81e" PRIMARY KEY ("id"))`);
-        await queryRunner.query(`CREATE TABLE "products" ("id" SERIAL NOT NULL, "name" text NOT NULL, "supplierId" integer NOT NULL, "unitPrice" numeric(10,4) NOT NULL, "unitsInStock" integer NOT NULL, CONSTRAINT "PK_0806c755e0aca124e67c0cf6d7d" PRIMARY KEY ("id"))`);
-        await queryRunner.query(`CREATE TABLE "order_details" ("orderId" integer NOT NULL, "productId" integer NOT NULL, "quantity" integer NOT NULL, CONSTRAINT "PK_e08ee153eb9c98ee497c1d1287e" PRIMARY KEY ("orderId", "productId"))`);
-        await queryRunner.query(`ALTER TABLE "products" ADD CONSTRAINT "FK_c143cbc0299e1f9220c4b5debd8" FOREIGN KEY ("supplierId") REFERENCES "suppliers"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
-        await queryRunner.query(`ALTER TABLE "order_details" ADD CONSTRAINT "FK_147bc15de4304f89a93c7eee969" FOREIGN KEY ("orderId") REFERENCES "orders"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
-        await queryRunner.query(`ALTER TABLE "order_details" ADD CONSTRAINT "FK_c67ebaba3e5085b6401911acc70" FOREIGN KEY ("productId") REFERENCES "products"("id") ON DELETE NO ACTION ON UPDATE NO ACTION`);
-    }
+    await queryInterface.createTable('products', {
+      id: {
+        type: Sequelize.INTEGER,
+        autoIncrement: true,
+        primaryKey: true,
+      },
+      name: {
+        type: Sequelize.TEXT,
+        allowNull: false,
+      },
+      supplierId: {
+        type: Sequelize.INTEGER,
+        allowNull: false,
+        references: {
+          model: 'suppliers',
+          key: 'id',
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'SET NULL',
+      },
+      unitPrice: {
+        type: Sequelize.DECIMAL,
+        allowNull: false,
+      },
+      unitsInStock: {
+        type: Sequelize.INTEGER,
+        allowNull: false,
+      },
+    });
 
-    public async down(queryRunner: QueryRunner): Promise<void> {
-        await queryRunner.query(`ALTER TABLE "order_details" DROP CONSTRAINT "FK_c67ebaba3e5085b6401911acc70"`);
-        await queryRunner.query(`ALTER TABLE "order_details" DROP CONSTRAINT "FK_147bc15de4304f89a93c7eee969"`);
-        await queryRunner.query(`ALTER TABLE "products" DROP CONSTRAINT "FK_c143cbc0299e1f9220c4b5debd8"`);
-        await queryRunner.query(`DROP TABLE "order_details"`);
-        await queryRunner.query(`DROP TABLE "products"`);
-        await queryRunner.query(`DROP TABLE "suppliers"`);
-        await queryRunner.query(`DROP TABLE "orders"`);
-    }
+    await queryInterface.createTable('orders', {
+      id: {
+        type: Sequelize.INTEGER,
+        autoIncrement: true,
+        primaryKey: true,
+      },
+      orderDate: {
+        type: Sequelize.DATE,
+        allowNull: false,
+      },
+      shippedDate: {
+        type: Sequelize.DATE,
+        allowNull: true,
+      },
+      shipAddress: {
+        type: Sequelize.TEXT,
+        allowNull: false,
+      },
+      shipPostalCode: {
+        type: Sequelize.TEXT,
+        allowNull: true,
+      },
+      shipCountry: {
+        type: Sequelize.TEXT,
+        allowNull: false,
+      },
+    });
 
-}
+    await queryInterface.createTable('order_details', {
+      orderId: {
+        type: Sequelize.INTEGER,
+        primaryKey: true,
+        references: {
+          model: 'orders',
+          key: 'id',
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE',
+      },
+      productId: {
+        type: Sequelize.INTEGER,
+        primaryKey: true,
+        references: {
+          model: 'products',
+          key: 'id',
+        },
+        onUpdate: 'CASCADE',
+        onDelete: 'CASCADE',
+      },
+      quantity: {
+        type: Sequelize.INTEGER,
+        allowNull: false,
+      },
+    });
+  },
+
+  async down(queryInterface, Sequelize) {
+    await queryInterface.dropTable('order_details');
+    await queryInterface.dropTable('orders');
+    await queryInterface.dropTable('products');
+    await queryInterface.dropTable('suppliers');
+  },
+};
 ```
 
 This guide uses the following file structure:
@@ -173,13 +348,14 @@ This guide uses the following file structure:
     ├── src
     │   ├── db
     │   │   ├── migrations
-    │   │   │   └── 1702216840703-init.ts
-    │   │   └── typeorm.config.ts
-    │   ├── entities
-    │   │   ├── order-detail.entity.ts
-    │   │   ├── order.entity.ts
-    │   │   ├── product.entity.ts
-    │   │   └── supplier.entity.ts
+    │   │   │   └── 20231220152726-init.js
+    │   │   ├── models
+    │   │   │   ├── order-detail.ts
+    │   │   │   ├── order.ts
+    │   │   │   ├── product.ts
+    │   │   │   └── supplier.ts
+    │   │   ├── db.ts
+    │   │   └── config.js
     │   ├── routers
     │   │   ├── order.router.ts
     │   │   ├── product.router.ts
@@ -190,10 +366,10 @@ This guide uses the following file structure:
     │   │   └── supplier.controller.ts
     │   ├── index.ts
     │   └── server.ts
+    ├── .sequelizerc
     ├── package.json
     └── tsconfig.json
 ```
-
 
 ## Step 1: Install Drizzle Kit
 
@@ -244,23 +420,19 @@ This command will generate a schema.ts file, along with snapshots and migrations
 ```typescript copy filename="src/drizzle/schema.ts"
 import {
   pgTable,
-  serial,
-  bigint,
   varchar,
+  serial,
   text,
   foreignKey,
   integer,
   numeric,
-  date,
+  timestamp,
   primaryKey,
 } from 'drizzle-orm/pg-core';
-import { sql } from 'drizzle-orm';
+import { relations, sql } from 'drizzle-orm';
 
-export const migrations = pgTable('migrations', {
-  id: serial('id').primaryKey().notNull(),
-  // You can use { mode: "bigint" } if numbers are exceeding js number limitations
-  timestamp: bigint('timestamp', { mode: 'number' }).notNull(),
-  name: varchar('name').notNull(),
+export const sequelizeMeta = pgTable('SequelizeMeta', {
+  name: varchar('name', { length: 255 }).primaryKey().notNull(),
 });
 
 export const suppliers = pgTable('suppliers', {
@@ -275,15 +447,15 @@ export const products = pgTable('products', {
   name: text('name').notNull(),
   supplierId: integer('supplierId')
     .notNull()
-    .references(() => suppliers.id),
-  unitPrice: numeric('unitPrice', { precision: 10, scale: 4 }).notNull(),
+    .references(() => suppliers.id, { onDelete: 'set null', onUpdate: 'cascade' }),
+  unitPrice: numeric('unitPrice').notNull(),
   unitsInStock: integer('unitsInStock').notNull(),
 });
 
 export const orders = pgTable('orders', {
   id: serial('id').primaryKey().notNull(),
-  orderDate: date('orderDate').notNull(),
-  shippedDate: date('shippedDate'),
+  orderDate: timestamp('orderDate', { withTimezone: true, mode: 'string' }).notNull(),
+  shippedDate: timestamp('shippedDate', { withTimezone: true, mode: 'string' }),
   shipAddress: text('shipAddress').notNull(),
   shipPostalCode: text('shipPostalCode'),
   shipCountry: text('shipCountry').notNull(),
@@ -294,30 +466,25 @@ export const orderDetails = pgTable(
   {
     orderId: integer('orderId')
       .notNull()
-      .references(() => orders.id),
+      .references(() => orders.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     productId: integer('productId')
       .notNull()
-      .references(() => products.id),
+      .references(() => products.id, { onDelete: 'cascade', onUpdate: 'cascade' }),
     quantity: integer('quantity').notNull(),
   },
   (table) => {
     return {
-      pkE08Ee153Eb9C98Ee497C1D1287E: primaryKey({
-        columns: [table.orderId, table.productId],
-        name: 'PK_e08ee153eb9c98ee497c1d1287e',
-      }),
+      orderDetailsPkey: primaryKey({ columns: [table.orderId, table.productId], name: 'order_details_pkey' }),
     };
   },
 );
 ```
 
-```sql copy filename="src/drizzle/0000_lush_lenny_balinger.sql"
+```sql copy filename="src/drizzle/0000_high_rhodey.sql"
 -- Current sql file was generated after introspecting the database
 
-CREATE TABLE IF NOT EXISTS "migrations" (
-	"id" serial PRIMARY KEY NOT NULL,
-	"timestamp" bigint NOT NULL,
-	"name" varchar NOT NULL
+CREATE TABLE IF NOT EXISTS "SequelizeMeta" (
+	"name" varchar(255) PRIMARY KEY NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "suppliers" (
@@ -331,14 +498,14 @@ CREATE TABLE IF NOT EXISTS "products" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"name" text NOT NULL,
 	"supplierId" integer NOT NULL,
-	"unitPrice" numeric(10, 4) NOT NULL,
+	"unitPrice" numeric NOT NULL,
 	"unitsInStock" integer NOT NULL
 );
 --> statement-breakpoint
 CREATE TABLE IF NOT EXISTS "orders" (
 	"id" serial PRIMARY KEY NOT NULL,
-	"orderDate" date NOT NULL,
-	"shippedDate" date,
+	"orderDate" timestamp with time zone NOT NULL,
+	"shippedDate" timestamp with time zone,
 	"shipAddress" text NOT NULL,
 	"shipPostalCode" text,
 	"shipCountry" text NOT NULL
@@ -348,23 +515,23 @@ CREATE TABLE IF NOT EXISTS "order_details" (
 	"orderId" integer NOT NULL,
 	"productId" integer NOT NULL,
 	"quantity" integer NOT NULL,
-	CONSTRAINT PK_e08ee153eb9c98ee497c1d1287e PRIMARY KEY("orderId","productId")
+	CONSTRAINT order_details_pkey PRIMARY KEY("orderId","productId")
 );
 --> statement-breakpoint
 DO $$ BEGIN
- ALTER TABLE "products" ADD CONSTRAINT "FK_c143cbc0299e1f9220c4b5debd8" FOREIGN KEY ("supplierId") REFERENCES "suppliers"("id") ON DELETE no action ON UPDATE no action;
+ ALTER TABLE "products" ADD CONSTRAINT "products_supplierId_fkey" FOREIGN KEY ("supplierId") REFERENCES "suppliers"("id") ON DELETE set null ON UPDATE cascade;
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
 --> statement-breakpoint
 DO $$ BEGIN
- ALTER TABLE "order_details" ADD CONSTRAINT "FK_147bc15de4304f89a93c7eee969" FOREIGN KEY ("orderId") REFERENCES "orders"("id") ON DELETE no action ON UPDATE no action;
+ ALTER TABLE "order_details" ADD CONSTRAINT "order_details_orderId_fkey" FOREIGN KEY ("orderId") REFERENCES "orders"("id") ON DELETE cascade ON UPDATE cascade;
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
 --> statement-breakpoint
 DO $$ BEGIN
- ALTER TABLE "order_details" ADD CONSTRAINT "FK_c67ebaba3e5085b6401911acc70" FOREIGN KEY ("productId") REFERENCES "products"("id") ON DELETE no action ON UPDATE no action;
+ ALTER TABLE "order_details" ADD CONSTRAINT "order_details_productId_fkey" FOREIGN KEY ("productId") REFERENCES "products"("id") ON DELETE cascade ON UPDATE cascade;
 EXCEPTION
  WHEN duplicate_object THEN null;
 END $$;
@@ -469,9 +636,9 @@ import { migrate } from 'drizzle-orm/node-postgres/migrator';
 })();
 ```
 
-## Step 6: Transition your TypeORM queries to Drizzle ORM queries
+## Step 6: Transition your Sequelize queries to Drizzle ORM queries
 
-In this section, we will show you how to replace several queries from **TypeORM** with **Drizzle ORM**.
+In this section, we will show you how to replace several queries from **Sequelize** with **Drizzle ORM**.
 
 ### Replace insert queries
 
@@ -479,12 +646,9 @@ We will show how to insert new rows into `suppliers` and `products` tables.
 
 1. `POST /suppliers`
 ```typescript copy filename="src/controllers/supplier.controller.ts"
-import dataSource from '../db/typeorm.config';
-import { Supplier } from '../entities/supplier.entity';
+import { Supplier } from '../db/models/supplier';
 
-const repository = dataSource.getRepository(Supplier);
-
-const suppliers = repository.create([
+const suppliers = await Supplier.bulkCreate([
   {
     companyName: 'TestCompanyName1',
     city: 'TestCity1',
@@ -496,8 +660,6 @@ const suppliers = repository.create([
     country: 'TestCountry2',
   },
 ]);
-
-await repository.save(suppliers);
 ```
 
 With **Drizzle ORM**, the query is implemented as follows:
@@ -523,12 +685,9 @@ await db.insert(suppliers).values([
 2. `POST /products`
 
 ```typescript copy filename="src/controllers/product.controller.ts"
-import dataSource from '../db/typeorm.config';
-import { Product } from '../entities/product.entity';
+import { Product } from '../db/models/product';
 
-const repository = dataSource.getRepository(Product);
-
-const products = repository.create([
+const products = await Product.bulkCreate([
   {
     name: 'TestProductName1',
     supplierId: 1,
@@ -554,13 +713,11 @@ const products = repository.create([
     unitsInStock: 2,
   },
 ]);
-
-await repository.save(products);
 ```
 
 With **Drizzle ORM**, the query is implemented as follows:
 
-Be careful with the `unitPrice` field. In **TypeORM** it's a `number` type, but in **Drizzle ORM** it's a `string` type, which can handle more than 16383 digits after the decimal point, unlike the `number` type.
+Be careful with the `unitPrice` field. In **Sequelize** it's a `number` type, but in **Drizzle ORM** it's a `string` type, which can handle more than 16383 digits after the decimal point, unlike the `number` type.
 
 ```typescript copy filename="src/controllers/product.controller.ts"
 await db.insert(products).values([
@@ -597,19 +754,16 @@ In this section we will show how to select one row, multiple rows, count rows, f
 
 1. `GET /products/:id`
 
-In **TypeORM**, including the relation is not type-safe
+In **Sequelize**, including the relation is not type-safe
 
 ```typescript copy filename="src/controllers/product.controller.ts"
-import dataSource from '../db/typeorm.config';
-import { Product } from '../entities/product.entity';
+import { Product } from '../db/models/product';
+import { Supplier } from '../db/models/supplier';
 
 const { id } = req.params;
 
-const repository = dataSource.getRepository(Product);
-
-const product = await repostitory.findOne({
-  where: { id },
-  relations: ['supplier'],
+const product = await Product.findByPk(id, {
+  include: Supplier,
 });
 ```
 
@@ -645,22 +799,21 @@ In **Drizzle ORM**, including the `supplier` relation is fully type-safe
 
 2. `GET /products`
 
-In **TypeORM**, the result is not type-safe as it doesn't specify the fields you want to select.
+In **Sequelize**, the result is not type-safe as it doesn't specify the fields you want to select.
 
 ```typescript copy filename="src/controllers/product.controller.ts"
-import { ILike } from 'typeorm';
-import dataSource from '../db/typeorm.config';
-import { Product } from '../entities/product.entity';
+import { Product } from '../db/models/product';
+import { Op } from 'sequelize';
 
-const repository = dataSource.getRepository(Product);
-
-const response = await repostitory.findAndCount({
-  skip: 0,
-  take: 10,
+const { rows, count } = await Product.findAndCountAll({
+  limit: 10,
+  offset: 0,
+  attributes: ['id', 'name', 'unitPrice', 'unitsInStock'],
   where: {
-    name: ILike(`%test%`),
+    name: {
+      [Op.iLike]: `%test%`,
+    },
   },
-  select: ['id', 'name', 'unitPrice', 'unitsInStock'],
 });
 ```
 
@@ -715,36 +868,39 @@ const [response, count] = await Promise.all([
 
 In **Drizzle ORM**, the result is strictly type-safe, meaning the fields you select are explicitly defined, enhancing the predictability and safety of your data retrieval.
 
+
 3. `GET /orders/:id`
 
-In **TypeORM** you can't use `aggregation functions` with relations and select specific fields using method `findOne`. So, you have to use `querybuilder`, which is not type-safe.
+In **Sequelize** you can't implement complicated queries with methods like `findByPk`. So, you have to use raw queries, which are not type-safe.
 
 We want to select `id`, `orderDate` and `shipCountry` fields from `orders` table and by using `aggregation functions` sum `totalPrice` of order, `totalQuantity` of products in the order and count `totalProducts` in the order.
 
 ```typescript copy filename="src/controllers/order.controller.ts"
-import dataSource from '../db/typeorm.config';
-import { Order } from '../entities/order.entity';
+import { sequelize } from '../db/db';
+import { QueryTypes } from 'sequelize';
 
 const { id } = req.params;
 
-const orderRepository = dataSource.getRepository(Order);
-
-const orderQueryBuilder = orderRepository.createQueryBuilder('order');
-
-const order = await orderQueryBuilder
-  .select([
-    'order.id as id',
-    'order.orderDate as "orderDate"',
-    'order.shipCountry as "shipCountry"',
-    'SUM(product.unitPrice * detail.quantity)::float as "totalPrice"',
-    'SUM(detail.quantity)::int as "totalQuantity"',
-    'COUNT(detail.productId)::int as "totalProducts"',
-  ])
-  .leftJoin('order.orderDetails', 'detail')
-  .leftJoin('detail.product', 'product')
-  .groupBy('order.id')
-  .where('order.id = :id', { id })
-  .getRawOne();
+const results = await sequelize.query(
+      `
+SELECT 
+  orders.id,
+  orders."orderDate",
+  orders."shipCountry",
+  SUM(products."unitPrice" * order_details.quantity)::float AS "totalPrice",
+  SUM(order_details.quantity)::int AS "totalQuantity",
+  COUNT(order_details."productId")::int AS "totalProducts"
+FROM orders
+LEFT JOIN order_details ON orders.id = order_details."orderId"
+LEFT JOIN products ON order_details."productId" = products.id
+WHERE orders.id = :orderId
+GROUP BY orders.id
+`,
+      {
+        replacements: { orderId: id },
+        type: QueryTypes.SELECT,
+      },
+    );
 ```
 
 In **Drizzle ORM**, the query is implemented as follows:
@@ -783,22 +939,21 @@ In this section, we will show you how to update multiple rows.
 1. `PATCH /suppliers/:id`
 
 ```typescript copy filename="src/controllers/supplier.controller.ts"
-import dataSource from '../db/typeorm.config';
-import { Supplier } from '../entities/supplier.entity';
+import { Supplier } from '../db/models/supplier';
 
 const { id } = req.params;
 
-const repository = dataSource.getRepository(Supplier);
-
-const supplier = await repository.findOneBy({ id });
+const supplier = await Supplier.findByPk(1);
 if (!supplier) {
   throw new Error('Supplier not found');
 }
 
-supplier.city = 'TestCity1Updated';
-supplier.country = 'TestCountry1Updated';
+supplier.set({
+  city: 'TestCity1Updated',
+  country: 'TestCountry1Updated',
+});
 
-await repository.save(supplier);
+await supplier.save();
 ```
 
 In **Drizzle ORM**, the query is implemented as follows:
@@ -826,19 +981,23 @@ In this section, we will show you how to delete a single row and multiple rows.
 1. `DELETE /orders/:id`
 
 ```typescript copy filename="src/controllers/order.controller.ts"
-import dataSource from '../db/typeorm.config';
-import { OrderDetail } from '../entities/order-detail.entity';
-import { Order } from '../entities/order.entity';
+import { Order } from '../db/models/order';
+import { OrderDetail } from '../db/models/order-detail';
 
 const { id } = req.params;
 
-const orderDetailRepository = dataSource.getRepository(OrderDetail);
+const order = await Order.findByPk(id);
+if (!order) {
+  throw new Error('Order not found');
+}
 
-await orderDetailRepository.delete({ orderId: id });
+const details = await OrderDetail.destroy({
+  where: {
+    orderId: id,
+  },
+});
 
-const orderRepository = dataSource.getRepository(Order);
-
-await orderRepository.delete({ id });
+await order.destroy();
 ```
 
 In **Drizzle ORM**, the query is implemented as follows:
