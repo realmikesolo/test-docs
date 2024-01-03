@@ -754,7 +754,7 @@ In this section we will show how to select one row, multiple rows, count rows, f
 
 1. `GET /products/:id`
 
-In **Sequelize**, including the relation is not type-safe
+In **Sequelize**, the response type is not strictly typed. For example, if you choose to include a relation or select only a few fields instead of all, these modifications will not be reflected in the response type.
 
 ```typescript copy filename="src/controllers/product.controller.ts"
 import { Product } from '../db/models/product';
@@ -762,7 +762,7 @@ import { Supplier } from '../db/models/supplier';
 
 const { id } = req.params;
 
-const product = await Product.findByPk(id, {
+const response = await Product.findByPk(id, {
   include: Supplier,
 });
 ```
@@ -776,7 +776,7 @@ import { products, suppliers } from '../drizzle/schema';
 
 const { id } = req.params;
 
-const product = await db
+const response = await db
   .select({
     product: products,
     supplier: suppliers,
@@ -786,7 +786,7 @@ const product = await db
   .leftJoin(suppliers, eq(suppliers.id, products.supplierId));
 
 // or you can use relational queries
-const product = await db.query.products.findFirst({
+const response = await db.query.products.findFirst({
   where: (products, { eq }) => eq(products.id, id),
   with: {
     supplier: true,
@@ -794,8 +794,26 @@ const product = await db.query.products.findFirst({
 });
 ```
 
-In **Drizzle ORM**, including the `supplier` relation is fully type-safe
+In **Drizzle ORM**, the response type will match precisely what is specified in the select object, so including the `supplier` relation is fully type-safe.
 
+```typescript
+// response type
+const response: {
+  product: {
+    name: string;
+    id: number;
+    supplierId: number;
+    unitPrice: string;
+    unitsInStock: number;
+  };
+  supplier: {
+    id: number;
+    companyName: string;
+    city: string | null;
+    country: string;
+  } | null;
+}[]
+```
 
 2. `GET /products`
 
@@ -866,12 +884,21 @@ const [response, count] = await Promise.all([
 ]);
 ```
 
-In **Drizzle ORM**, the result is strictly type-safe, meaning the fields you select are explicitly defined, enhancing the predictability and safety of your data retrieval.
+In **Drizzle ORM**, the result is strictly type-safe, meaning the fields you select are explicitly defined.
 
+```typescript
+// response type
+const response: {
+  id: number;
+  name: string;
+  unitPrice: string;
+  unitsInStock: number;
+}[]
+```
 
 3. `GET /orders/:id`
 
-In **Sequelize** you can't implement complicated queries with methods like `findByPk`. So, you have to use raw queries, which are not type-safe.
+In **Sequelize** you can't implement complicated queries with methods like `findByPk`. So, you have to use raw queries, which are not type-safe as well.
 
 We want to select `id`, `orderDate` and `shipCountry` fields from `orders` table and by using `aggregation functions` sum `totalPrice` of order, `totalQuantity` of products in the order and count `totalProducts` in the order.
 
@@ -881,7 +908,7 @@ import { QueryTypes } from 'sequelize';
 
 const { id } = req.params;
 
-const results = await sequelize.query(
+const response = await sequelize.query(
       `
 SELECT 
   orders.id,
@@ -912,7 +939,7 @@ import { orders, orderDetails, products } from '../drizzle/schema';
 
 const { id } = req.params;
 
-const order = await db
+const response = await db
       .select({
         id: orders.id,
         shipCountry: orders.shipCountry,
@@ -928,7 +955,19 @@ const order = await db
       .leftJoin(products, eq(products.id, orderDetails.productId));
 ```
 
-In **Drizzle ORM**, the result will be type-safe, matching the type of the specified object in the select method.
+In **Drizzle ORM**, the result will be type-safe with aggregations too.
+
+```typescript
+// response type
+const response: {
+  id: number;
+  shipCountry: string;
+  orderDate: string;
+  totalPrice: number;
+  totalQuantity: number;
+  totalProducts: number;
+}[]
+```
 
 **Note:** as of now aggregations are not supported in relational queries, so you have to use `core queries`.
 
@@ -976,7 +1015,7 @@ await db
 
 ### Replace delete queries
 
-In this section, we will show you how to delete a single row and multiple rows.
+In this section, we will show you how to delete a single row and multiple rows using transactions.
 
 1. `DELETE /orders/:id`
 
@@ -986,18 +1025,25 @@ import { OrderDetail } from '../db/models/order-detail';
 
 const { id } = req.params;
 
-const order = await Order.findByPk(id);
-if (!order) {
-  throw new Error('Order not found');
+try {
+  const order = await Order.findByPk(id);
+  if (!order) {
+    throw new Error('Order not found');
+  }
+
+  await sequelize.transaction(async (t) => {
+    await OrderDetail.destroy({
+      where: {
+        orderId: id,
+      },
+      transaction: t,
+    });
+
+    await order.destroy({ transaction: t });
+  });
+} catch (e) {
+  console.error(e);
 }
-
-const details = await OrderDetail.destroy({
-  where: {
-    orderId: id,
-  },
-});
-
-await order.destroy();
 ```
 
 In **Drizzle ORM**, the query is implemented as follows:
@@ -1009,7 +1055,13 @@ import { orderDetails, orders } from '../drizzle/schema';
 
 const { id } = req.params;
 
-await db.delete(orderDetails).where(eq(orderDetails.orderId, id));
+try {
+  await db.transaction(async (tx) => {
+    await tx.delete(orderDetails).where(eq(orderDetails.orderId, id));
 
-await db.delete(orders).where(eq(orders.id, id));
+    await tx.delete(orders).where(eq(orders.id, id));
+  });
+} catch (e) {
+  console.error(e);
+}
 ```
