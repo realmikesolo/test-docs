@@ -1022,6 +1022,7 @@ In this section, we will show you how to delete a single row and multiple rows u
 ```typescript copy filename="src/controllers/order.controller.ts"
 import { Order } from '../db/models/order';
 import { OrderDetail } from '../db/models/order-detail';
+import { sequelize } from '../db/db';
 
 const { id } = req.params;
 
