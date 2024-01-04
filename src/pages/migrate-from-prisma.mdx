@@ -729,7 +729,7 @@ const order = await prisma.order.findFirst({
   },
 });
 if (!order) {
-  throw new NotFoundException('Order not found');
+  throw new Error('Order not found');
 }
 
 const { _count, _sum } = await prisma.orderDetail.aggregate({
